@@ -1,0 +1,83 @@
+---
+
+- hosts: all
+  become: true
+  pre_tasks:
+
+    - name: Install updates
+      package:
+       upgrade: dist
+       update_cache: yes
+      tags: [ always ]
+
+- hosts: all
+  become: true
+  vars_files:
+    - host_vars/default.yml
+
+  tasks:
+
+    - name: Install LAMP Packages
+      tags: [ system ]
+      package: 
+        name: "{{ item }}" 
+        state: latest 
+        update_cache: yes
+      loop: "{{ lamp_package }}"
+
+    - name: Install PHP Extensions
+      tags: [ system ]
+      package: 
+        name: "{{ item }}" 
+        state: latest 
+        update_cache: yes
+      loop: "{{ php_modules }}"
+
+
+  # Apache Configuration
+
+    - name: Enable rewrite module
+      shell: /usr/sbin/a2enmod rewrite
+      notify: "restart apache"
+      tags: [ apache ]
+
+    - name: Disable default Apache site
+      shell: /usr/sbin/a2dissite 000-default.conf
+      notify: "restart apache"
+      tags: [ apache ]
+
+  # MySQL Configuration
+    - name: Set the root password
+      mysql_user:
+        name: root
+        password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+      tags: [ mysql, mysql-root ]
+
+    - name: Remove all anonymous user accounts
+      mysql_user:
+        name: ''
+        host_all: yes
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+      tags: [ mysql ]
+
+    - name: Remove the MySQL test database
+      mysql_db:
+        name: test
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+      tags: [ mysql ]
+
+
+
+
+  handlers:
+
+    - name: Restart apache
+      service:
+        name: apache2
+        state: restarted
+      listen: "restart apache"
