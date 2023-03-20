@@ -1,4 +1,7 @@
 # ignore configuration file
+inventory
+ansible.cfg
+host_vars/default.yml
 
 # ignore log files
 *.log
