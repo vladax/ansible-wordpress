@@ -39,12 +39,6 @@
         update_cache: yes
       loop: "{{ php_modules }}"
 
-    - name: UFW - Allow HTTP on port {{ http_port }}
-      tags: [ system ]
-      ufw:
-        rule: allow
-        port: "{{ http_port }}"
-        proto: tcp
 
     - name: Start Apache, MySQL, and PHP.
       tags: [ system ]
@@ -56,6 +50,12 @@
         - apache2
         - mysql
 
+    - name: UFW - Allow HTTP on port {{ http_port }}
+      tags: [ system ]
+      ufw:
+        rule: allow
+        port: "{{ http_port }}"
+        proto: tcp
 
   # Apache Configuration
 
@@ -139,15 +139,6 @@
   # Install WP-CLI
 
 
-    - name: Check if WP CLI exists
-      tags: [ wpcli-check ]
-      stat: 
-        path: "{{ wp_cli_bin_path }}"
-      register: _wpcli_exist
-      failed_when: "'wp' not in _wpcli_exist.stdout"
-      changed_when: false
-
-
     - name: Install WP CLI
       tags: [ wpcli-install ]
       get_url:
@@ -159,14 +150,11 @@
         mode: 0755
         
 
-    - name: Info wp-cli version
+    - name: Show WP CLI version  
       tags: [ wpcli-info ]
       command: >
         wp --info --allow-root
       register: result
-
-    - name: Show WP CLI version  
-      tags: [ wpcli-info ]
       debug: 
         msg: "{{ result.stdout_lines }}"
 
@@ -218,9 +206,6 @@
         recurse: true
       with_items:
           - uploads
-          - plugins
-          - themes
-          - wp-content
     
 
   handlers:

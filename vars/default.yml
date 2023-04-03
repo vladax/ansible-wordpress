@@ -1,9 +1,9 @@
 ---
 #Install LAMP
-lamp_package: [ 'acl', 'git', 'curl', 'unzip', 'sendmail', 'mysql-server', 'python3-pymysql', 'python3-apt', 'python3-pycurl', 'python3-mysqldb', 'php', 'libapache2-mod-php', 'libpcre3-dev'  ] 
+lamp_package: [ 'acl', 'unzip', 'sendmail', 'mysql-server', 'python3-pymysql', 'python3-pycurl', 'python3-mysqldb', 'php', 'libapache2-mod-php', 'libpcre3-dev'  ] 
 
 #System Settings
-php_modules: [ 'php-curl', 'php-gd', 'php-mbstring', 'php-xml', 'php-xmlrpc', 'php-soap', 'php-intl', 'php-zip', 'php-common', 'php-cli', 'php-dev', 'php-imagick', 'php-json', 'php-opcache', 'php-pdo', 'php-mysql', 'php-mysqli', 'php-mysqlnd', 'php-apcu' ]
+php_modules: [ 'php-curl', 'php-gd', 'php-mbstring', 'php-xml', 'php-xmlrpc', 'php-soap', 'php-intl', 'php-zip', 'php-cli', 'php-dev', 'php-imagick', 'php-json', 'php7.4-opcache', 'php7.4-pdo', 'php-mysql', 'php7.4-mysqli', 'php7.4-mysqlnd', 'php-apcu' ]
 
 
 
