@@ -1,0 +1,239 @@
+---
+
+- hosts: all
+  become: true
+  pre_tasks:
+
+    - name: Install updates
+      tags: [ always ]
+      package:
+       upgrade: dist
+       update_cache: yes
+
+- hosts: all
+  become: true
+  vars_files:
+    - vars/default.yml
+
+  tasks:
+
+    - name: Add ondrej repository for later versions of PHP.
+      tags: [ system ]
+      apt_repository: 
+        repo: 'ppa:ondrej/php' 
+        update_cache: yes
+
+    - name: Install LAMP Packages
+      tags: [ system ]
+      package: 
+        name: "{{ item }}" 
+        state: latest 
+        update_cache: yes
+      loop: "{{ lamp_package }}"
+
+    - name: Install PHP Extensions
+      tags: [ system ]
+      package: 
+        name: "{{ item }}" 
+        state: latest 
+        update_cache: yes
+      loop: "{{ php_modules }}"
+
+    - name: UFW - Allow HTTP on port {{ http_port }}
+      tags: [ system ]
+      ufw:
+        rule: allow
+        port: "{{ http_port }}"
+        proto: tcp
+
+    - name: Start Apache, MySQL, and PHP.
+      tags: [ system ]
+      service: 
+        name: "{{ item }}" 
+        state: started 
+        enabled: yes
+      with_items:
+        - apache2
+        - mysql
+
+
+  # Apache Configuration
+
+    - name: Enable Apache rewrite module (required for WordPress).
+      tags: [ apache, system ]
+      apache2_module: 
+        name: rewrite
+        state: present
+      notify: "restart apache"
+
+    - name: Add Apache virtualhost for WordPress.
+      tags: [ apache, system ]
+      template:
+        src: "templates/new-site.conf.j2"
+        dest: "/etc/apache2/sites-available/{{ domain }}.conf"
+        owner: root
+        group: root
+        mode: 0644
+      notify: "restart apache"
+
+    - name: Disable the default site.
+      tags: [ apache, system ]
+      command: >
+        a2dissite 000-default
+        removes=/etc/apache2/sites-enabled/000-default.conf
+      notify: "restart apache"
+    
+    - name: Enable the WordPress site.
+      tags: [ apache, system ]
+      command: >
+        a2ensite {{ domain }}
+        creates=/etc/apache2/sites-enabled/{{ domain }}.conf
+      notify: "restart apache"
+
+
+  # MySQL Configuration
+
+
+    # - name: Using login_unix_socket to connect to server
+    #   tags: [ mysql, mysql-root ]
+    #   community.mysql.mysql_user:
+    #     name: root
+    #     password: "{{ mysql_root_password }}"
+    #     login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Remove all anonymous user accounts
+      tags: [ mysql, system ]
+      mysql_user:
+        name: ''
+        host_all: true
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+
+    - name: Remove the MySQL test database
+      tags: [ mysql ]
+      mysql_db:
+        name: test
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+
+  # WordPress configuration
+
+    - name: Create a MySQL user for WordPress.
+      tags: [ wpcli-db ]
+      mysql_user:
+        name: "{{ mysql_wp_user }}"
+        password: "{{ mysql_wp_password }}"
+        priv: '*.*:ALL,GRANT'
+        host: localhost
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        # notify: "restart mysql"
+
+      
+  # Install WP-CLI
+
+
+    - name: Check if WP CLI exists
+      tags: [ wpcli-check ]
+      stat: 
+        path: "{{ wp_cli_bin_path }}"
+      register: _wpcli_exist
+      failed_when: "'wp' not in _wpcli_exist.stdout"
+      changed_when: false
+
+
+    - name: Install WP CLI
+      tags: [ wpcli-install ]
+      get_url:
+        url: "{{ wp_cli_phar_url }}"
+        dest: "{{ wp_cli_bin_path }}"
+        force: true
+        owner: root
+        group: root
+        mode: 0755
+        
+
+    - name: Info wp-cli version
+      tags: [ wpcli-info ]
+      command: >
+        wp --info --allow-root
+      register: result
+
+    - name: Show WP CLI version  
+      tags: [ wpcli-info ]
+      debug: 
+        msg: "{{ result.stdout_lines }}"
+
+
+    - name: Download Core files
+      tags: [ wpcli-download ]
+      command: >
+        wp core download
+        --allow-root --path='{{ wordpress_core_path }}'
+        --locale=en_US 
+
+
+    - name: Create wp-config file
+      tags: [ wpcli-core-configure ] 
+      command: >
+        wp config create
+        --allow-root --path='{{ wordpress_core_path }}'
+        --dbname='{{ item.dbname }}'
+        --dbuser='{{ item.dbuser }}'
+        --dbpass='{{ item.dbpass }}'
+        --dbhost='{{ item.dbhost | default('localhost') }}'
+        --dbprefix='{{ item.dbprefix | default('wp_') }}'
+        --extra-php="define('FS_METHOD','direct');"            
+      loop: "{{ wordpress_installs }}"
+
+    - name: Create Database
+      tags: [ wpcli-db ] 
+      command: >
+        wp db create 
+        --allow-root --path='{{ wordpress_core_path }}'
+
+    - name: Install WordPress
+      tags: [ wpcli-wp-install ] 
+      command: >
+        wp core install 
+        --allow-root --path='{{ wordpress_core_path }}'
+        --url="{{ wp_siteurl }}" 
+        --title="{{ wordpress_site_name }}" 
+        --admin_user="{{ wp_user }}" 
+        --admin_password="{{ wp_user_pass }}" 
+        --admin_email="{{ wp_admin_email }}"
+
+    - name: Change owner and group
+      tags: [ wp-chown ] 
+      file:
+        path: "{{ wordpress_core_path }}"
+        owner: "{{ item.owner | default('www-data') }}"
+        group: "{{ item.group | default(item.owner) | default('www-data') }}"
+        recurse: true
+      with_items:
+          - uploads
+          - plugins
+          - themes
+          - wp-content
+    
+
+  handlers:
+
+    - name: Restart apache
+      service:
+        name: apache2
+        state: restarted
+      listen: "restart apache"
+
+    - name: restart mysql
+      service: 
+        name: mysql
+        enabled: yes
+        state: restarted
+      listen: "restart mysql"
